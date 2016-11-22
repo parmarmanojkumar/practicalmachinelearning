@@ -104,6 +104,20 @@ stop.time.all = Sys.time()
 print(stop.time.all - start.time.all)
 confusionMatrix(predict(mod.rf, validation), validation$classe)$overall[1]
 # Rf is best 
-finMod <- train(classe ~ . , data= trainData , method = "rf", 
+finMod.rf <- train(classe ~ . , data= trainData , method = "rf", 
                 trControl = fitCtrl, verbose = F)
+# gbm for agreement accuracy
+finMod.gbm <- train(classe ~ . , data= trainData , method = "gbm", 
+                   trControl = fitCtrl, verbose = F)
 
+#svmr for agreement accuracy
+finMod.svmr <- train(classe ~ . , data= trainData , method = "svmRadial", 
+                        trControl = fitCtrl, verbose = F)
+#predict from 3 different best model
+predFin.rf <- predict(finMod.rf,testData)
+predFin.gbm <- predict(finMod.gbm,testData)
+predFin.svmr <- predict(finMod.svmr, testData)
+
+#check for agreement accuracy
+confusionMatrix(predFin.gbm,predFin.rf)
+confusionMatrix(predFin.svmr,predFin.rf)
