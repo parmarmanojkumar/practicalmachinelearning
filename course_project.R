@@ -102,7 +102,10 @@ for (i in 1:10){
 }
 stop.time.all = Sys.time()
 print(stop.time.all - start.time.all)
+predDf <- predDf[-1,]
 confusionMatrix(predict(mod.rf, validation), validation$classe)$overall[1]
+confusionMatrix(predict(mod.gbm, validation), validation$classe)$overall[1]
+confusionMatrix(predict(mod.svmr, validation), validation$classe)$overall[1]
 # Rf is best 
 finMod.rf <- train(classe ~ . , data= trainData , method = "rf", 
                 trControl = fitCtrl, verbose = F)
