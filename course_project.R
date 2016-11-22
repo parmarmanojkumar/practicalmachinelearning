@@ -103,9 +103,17 @@ for (i in 1:10){
 stop.time.all = Sys.time()
 print(stop.time.all - start.time.all)
 predDf <- predDf[-1,]
-confusionMatrix(predict(mod.rf, validation), validation$classe)$overall[1]
-confusionMatrix(predict(mod.gbm, validation), validation$classe)$overall[1]
-confusionMatrix(predict(mod.svmr, validation), validation$classe)$overall[1]
+rownames(predDf) <- NULL
+kable(predDf[,-c(2)], digits = 3)
+modAccuracy <- colMeans(predDf[,-c(1,2)])
+colnames(modAccuracy) <- "Avg. Accuracy"
+kable(t(modAccuracy), digits = 3)
+validAccuracy <- data.frame(Accuracy = c(
+confusionMatrix(predict(mod.rf, validation), validation$classe)$overall[1],
+confusionMatrix(predict(mod.gbm, validation), validation$classe)$overall[1],
+confusionMatrix(predict(mod.svmr, validation), validation$classe)$overall[1]))
+rownames(validAccuracy) <- c("rf", "gbm", "svmr")
+kable(t(validAccuracy), digits = 3)
 # Rf is best 
 finMod.rf <- train(classe ~ . , data= trainData , method = "rf", 
                 trControl = fitCtrl, verbose = F)
@@ -120,7 +128,10 @@ finMod.svmr <- train(classe ~ . , data= trainData , method = "svmRadial",
 predFin.rf <- predict(finMod.rf,testData)
 predFin.gbm <- predict(finMod.gbm,testData)
 predFin.svmr <- predict(finMod.svmr, testData)
-
+finPred <- data.frame(prediction = predFin.rf)
+rownames(finPred) <- 1:length(predFin.rf)
+kable(t(finPred))
+max(finMod.rf$results$Accuracy)
 #check for agreement accuracy
 confusionMatrix(predFin.gbm,predFin.rf)
 confusionMatrix(predFin.svmr,predFin.rf)
