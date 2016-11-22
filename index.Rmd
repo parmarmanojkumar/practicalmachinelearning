@@ -14,13 +14,23 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+cat('\014')
 library(caret)
 library(ggplot2)
 library(randomForest)
 library(knitr)
 library(parallel)
 library(doParallel)
+# load workspace.
+load("run_Data.RData")
 ```
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+#Make parallel processing nebale
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+```
+
 # About Data
 ## Background
 Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
@@ -28,13 +38,9 @@ Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible t
 ## Data
 
 The training data for this project are available here:
-
 https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
-
 The test data are available here:
-
 https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
-
 The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
 
 ##Goal of the Analysis
@@ -48,7 +54,9 @@ Your submission for the Peer Review portion should consist of a link to a Github
 
 ## Getting Data
 
-```{r}
+This method uses the URL provided to download files for training & test data.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=TRUE}
 if(!file.exists("./projectdata")){
         dir.create("./projectdata")
 }
@@ -65,7 +73,9 @@ if(!file.exists("./projectdata/pml-testing.csv")){
 
 ## cleaning Data
 
-```{r}
+This method loads the data and cleans it. All the columns with **all missing values** are discarded. Same way **first 7 columns** are not helpful for prediction purpose and hence they are removed.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=TRUE}
 trainData <- read.csv("./projectdata/pml-training.csv", 
                       na.strings = c("NA","#DIV/0!", ""))
 testData <- read.csv("./projectdata/pml-testing.csv",
@@ -73,16 +83,16 @@ testData <- read.csv("./projectdata/pml-testing.csv",
 # delete colums with all missing values
 trainData <- trainData[,colSums(is.na(trainData))==0]
 testData <- testData[,colSums(is.na(testData))==0]
-
 # remove unnecesary data as it is not relavant
 trainData <- trainData[,-c(1:7)]
 testData <- testData[,-c(1:7)]
 ```
 
-
 ## Generating training, testing & validation data
 
-```{r}
+This method divides training data in to **training** part ($60$%), **testing** part ($20$%) & **validation** part ($20$%)
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=TRUE}
 set.seed(123)
 inBuild <- createDataPartition(y = trainData$classe, p = 0.8, list = F)
 buildData <- trainData[inBuild,]
@@ -90,23 +100,212 @@ validation <- trainData[-inBuild,]
 inTrain <- createDataPartition(y = buildData$classe, p = 0.75, list = F)
 training <- buildData[inTrain,]
 testing <- buildData[-inTrain,]
+```
+
+Here are the dimensions of various subsets after split
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
 dim(validation)
 dim(training)
 dim(testing)
+```
+
+## Exploration of data
+
+Exploration of predicted variable "**classe**" reveals that it is *uniform* in nature & hence model based analysis will yield poor results.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+qplot(classe,data=training, main="Distribution of Classes")
+```
+
+There exist a **very high corelation** (> $0.8$) between predictors and hence "**pca**"$ needs to be used as preprocessor step.
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+#find correlation
+highCor <- findCorrelation(cor(training[,-53]), cutoff = 0.8)
+names(training)[highCor]
+```
+
+Following are **list of predictors** which are used to build model.
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+#final predictors
+names(training[,-53])
 ```
 
 
 # Model Building
 
 ## trainControl Parameter
-```{r}
+
+Following training parameters are used for the model building.
+
+- **Cross validation** method is used with **7 folds**
+- **Principle component analysis** is used as pre processing step
+- Parallel processing is allowed to build model
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=TRUE}
 # train control parameter
 fitCtrl <- trainControl(method = "cv",number = 7, verboseIter = F, 
                         preProcOptions = c("pca"),
                         allowParallel = T)
 ```
 
+## Model Selection
 
-## To be added
+Model selection is carried out by **building multiple models** and later selecting best performing models based on **average accuracy**.
+*Gradient boosting, random forest, support vector machine radial, support vecor machine linear, neuralnet & logit boost* are primary candidates.
 
+### Evaluating multiple models
 
+Models are build $10$ times and their respective accuracy is captured for all run.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=TRUE}
+# generate dataframe over multiple prediction
+predDf <- data.frame(run = 0, time = 0, gbm = 0, rf = 0, svmr = 0, 
+                     svml = 0, nn = 0, lb = 0)
+start.time.all = Sys.time() #log the starting time
+# Run the model buiding 10 times & record accuracy over test set
+for (i in 1:10){
+        inTrain <- createDataPartition(y = buildData$classe, p = 0.75, list = F)
+        training <- buildData[inTrain,]
+        testing <- buildData[-inTrain,]
+        dim(validation)
+        dim(training)
+        dim(testing)
+        #Start building model
+        start.time = Sys.time()
+        mod.gbm <- train(classe ~ . , data= training , method = "gbm", 
+                         trControl = fitCtrl, verbose = F)
+        mod.rf <- train(classe ~ . , data= training , method = "rf", 
+                        trControl = fitCtrl, verbose = F)
+        mod.svmr <- train(classe ~ . , data= training , method = "svmRadial", 
+                          trControl = fitCtrl, verbose = F)
+        mod.svml <- train(classe ~ . , data= training , method = "svmLinear", 
+                         trControl = fitCtrl, verbose = F)
+        mod.nn <- train(classe ~ . , data= training , method = "nnet", 
+                        trControl = fitCtrl, verbose = F)
+        mod.lb <- train(classe ~ . , data= training , method = "LogitBoost", 
+                        trControl = fitCtrl, verbose = F)
+        stop.time = Sys.time()
+        
+        #Predictions
+        pred_val <- c( i, (stop.time - start.time),
+                        unname(confusionMatrix(predict(mod.gbm, testing), 
+                                               testing$classe)$overall[1]),
+                        unname(confusionMatrix(predict(mod.rf, testing), 
+                                               testing$classe)$overall[1]),
+                        unname(confusionMatrix(predict(mod.svmr, testing), 
+                                               testing$classe)$overall[1]),
+                        unname(confusionMatrix(predict(mod.svml, testing), 
+                                               testing$classe)$overall[1]),
+                        unname(confusionMatrix(predict(mod.nn, testing), 
+                                               testing$classe)$overall[1]),
+                        unname(confusionMatrix(predict(mod.lb, testing), 
+                                               testing$classe)$overall[1]))
+        predDf <- rbind(predDf, pred_val)
+}
+stop.time.all = Sys.time()
+#calculate total time for execution
+print(stop.time.all - start.time.all)
+#correct the prediction frame
+predDf <- predDf[-1,]
+rownames(predDf) <- NULL
+```
+
+### Accuracy of multiple models
+
+Following shows the **accuracy** of all models for **all runs**. Please note that models are refereed by short names.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+kable(predDf[,-c(2)], digits = 3)
+```
+
+**Average accuracy** of all runs for all models are as per following
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+modAccuracy <- data.frame(colMeans(predDf[,-c(1,2)]))
+colnames(modAccuracy) <- "Avg. Accuracy"
+kable(t(modAccuracy), digits = 3)
+```
+
+From average accuracy point of view, **random forrest** is **best** performing model. *Gradient boosting* and *support vector machine radial* are respectively *second* and *third* best model.
+
+### Selection of final set of Models & out of sample accuracy
+
+Best models are used to predict values on **validation data set** (only once) for calculation of "**out of sample**" accuracy.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+validAccuracy <- data.frame(Accuracy = c(
+confusionMatrix(predict(mod.rf, validation), validation$classe)$overall[1],
+confusionMatrix(predict(mod.gbm, validation), validation$classe)$overall[1],
+confusionMatrix(predict(mod.svmr, validation), validation$classe)$overall[1]))
+rownames(validAccuracy) <- c("rf", "gbm", "svmr")
+kable(t(validAccuracy), digits = 3)
+```
+
+From "**out of sample**" accuracy point of view, **random forrest** is **best** performing model. *Gradient boosting* and *support vector machine radial* are respectively *second* and *third* best model.
+
+Hence random forest is used for building final model.
+
+## Final Model
+
+**Random forest** model is built over *original training dataset*.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=TRUE}
+# Rf is best 
+finMod.rf <- train(classe ~ . , data= trainData , method = "rf", 
+                trControl = fitCtrl, verbose = F)
+```
+
+## Model agreement accuracy
+
+On original test set($20$ case), actual values are not available and hence to improve prediction confidence level various **model agreement accuracy** is used.
+Here additionally, gradient boosting and support vector machine radial models are built on original training dataset.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=TRUE}
+# gbm for agreement accuracy
+finMod.gbm <- train(classe ~ . , data= trainData , method = "gbm", 
+                   trControl = fitCtrl, verbose = F)
+
+#svmr for agreement accuracy
+finMod.svmr <- train(classe ~ . , data= trainData , method = "svmRadial", 
+                        trControl = fitCtrl, verbose = F)
+```
+
+Prediction values are generated for all 3 models and used for checking model agreement accuracy
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+#predict from 3 different best model
+predFin.rf <- predict(finMod.rf,testData)
+predFin.gbm <- predict(finMod.gbm,testData)
+predFin.svmr <- predict(finMod.svmr, testData)
+#check for agreement accuracy
+modAgreementAccuracy <- data.frame(Agreement.Accuracy = c(
+        confusionMatrix(predFin.gbm,predFin.rf)$overall[1],
+        confusionMatrix(predFin.svmr,predFin.rf)$overall[1]))
+rownames(modAgreementAccuracy) <- c("gbm vs. rf", "svmr vs. rf")
+kable(t(modAgreementAccuracy), digits = 3)
+```
+
+Since all 3 models are in full agreement of predicted values, confidence in **random forest** model is increased to very high level.
+
+# Final prediction
+
+Here is the final predicted values for test cases provided.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+# Final prediction
+finPred <- data.frame(prediction = predFin.rf)
+rownames(finPred) <- 1:length(predFin.rf)
+kable(t(finPred))
+```
+
+# Reproducibility
+
+Following is session-info to list respective packages along with their versions
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+sessionInfo()
+```
+
+Hint : Majority of code here is executed separately and work space was saved. Saved work space is used to create this report. Model selection process is very time consuming (took on my machine 3.75 hr with parallel processing enable).
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+stopCluster(cluster)
+```

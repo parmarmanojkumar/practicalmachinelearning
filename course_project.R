@@ -128,10 +128,14 @@ finMod.svmr <- train(classe ~ . , data= trainData , method = "svmRadial",
 predFin.rf <- predict(finMod.rf,testData)
 predFin.gbm <- predict(finMod.gbm,testData)
 predFin.svmr <- predict(finMod.svmr, testData)
+#check for agreement accuracy
+modAgreementAccuracy <- data.frame(Agreement.Accuracy = c(
+        confusionMatrix(predFin.gbm,predFin.rf)$overall[1],
+        confusionMatrix(predFin.svmr,predFin.rf)$overall[1]))
+rownames(modAgreementAccuracy) <- c("gbm vs. rf", "svmr vs. rf")
+kable(t(modAgreementAccuracy), digits = 3)
+# Final prediction
 finPred <- data.frame(prediction = predFin.rf)
 rownames(finPred) <- 1:length(predFin.rf)
 kable(t(finPred))
-max(finMod.rf$results$Accuracy)
-#check for agreement accuracy
-confusionMatrix(predFin.gbm,predFin.rf)
-confusionMatrix(predFin.svmr,predFin.rf)
+
